@@ -39,6 +39,9 @@ import com.google.android.gms.vision.barcode.BarcodeDetector;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -48,11 +51,16 @@ public class MainActivity extends AppCompatActivity {
     private TextView textView;
     private View layout;
 
+    private Bitmap image;
+
     int screenWidth, screenHeight;
 
     ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
     ConverterYUVtoRGB translator = new ConverterYUVtoRGB();
+
+    ImageEventBus imageBus;
+    Runnable imageUpdater;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +76,16 @@ public class MainActivity extends AppCompatActivity {
         screenHeight = displayMetrics.heightPixels;
         screenWidth = displayMetrics.widthPixels;
 
+        imageBus = new ImageEventBus();
+
+        imageUpdater = new Runnable() {
+            @Override
+            public void run() {
+                preView.setImageBitmap(imageBus.getImage());
+                preView.postDelayed(imageUpdater, 0);
+            }
+        };
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.CAMERA},
@@ -76,7 +94,14 @@ public class MainActivity extends AppCompatActivity {
             initializeCamera();
         }
 
+//        while (true) {
+//            preView.setImageBitmap(imageBus.getImage());
+//        }
+
+        preView.post(imageUpdater);
+
     }
+
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
@@ -100,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
                     //ImageCapture imageCapture = new ImageCapture.Builder().build();
 
                     ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                                .setTargetResolution(new Size(screenWidth, screenHeight))
+                            .setTargetResolution(new Size(screenWidth, screenHeight))
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build();
 
@@ -108,7 +133,9 @@ public class MainActivity extends AppCompatActivity {
                             .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                             .build();
 
-                    imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(MainActivity.this),
+                    imageAnalysis.setAnalyzer(
+//                            ContextCompat.getMainExecutor(MainActivity.this),
+                            Executors.newSingleThreadExecutor(),
                             new ImageAnalysis.Analyzer() {
                                 @Override
                                 public void analyze(@NonNull ImageProxy image) {
@@ -150,8 +177,16 @@ public class MainActivity extends AppCompatActivity {
                                     Bitmap rotatedBitmap = Bitmap.createBitmap(myBitmap, 0, 0,
                                             myBitmap.getWidth(), myBitmap.getHeight(), matrix, true);
 
-//                                    preView.setRotation(image.getImageInfo().getRotationDegrees());
-                                    preView.setImageBitmap(rotatedBitmap);
+
+//                                    preView.post(new Runnable() {
+//                                        @Override
+//                                        public void run() {
+//                                            preView.setImageBitmap(rotatedBitmap);
+//                                        }
+//                                    });
+
+                                    imageBus.setNewImage(rotatedBitmap);
+
                                     image.close();
                                 }
                             });
@@ -163,8 +198,10 @@ public class MainActivity extends AppCompatActivity {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+
             }
         }, ContextCompat.getMainExecutor(this));
+//        }, Executors.newSingleThreadExecutor());
     }
 
 }
